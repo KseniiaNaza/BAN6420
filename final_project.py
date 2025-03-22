@@ -13,8 +13,9 @@ import numpy as np  # for generating color values
 
 app = Flask(__name__)
 
-# Connection with MongoDB
-client = MongoClient("mongodb://localhost:27017/")
+# Connection with MongoDB (use env variable if exists)
+MONGO_URI = os.environ.get("MONGO_URI", "mongodb://localhost:27017/")
+client = MongoClient(MONGO_URI)
 db = client["survey_db"]
 collection = db["participants"]
 
@@ -33,8 +34,8 @@ class User:
         return {
             "age": self.age,
             "gender": self.gender,
-            "total_income": round(self.total_income, 2),  # round to 2 decimals
-            "expenses": {k: round(v, 2) for k, v in self.expenses.items()}  
+            "total_income": round(self.total_income, 2),
+            "expenses": {k: round(v, 2) for k, v in self.expenses.items()}
         }
 
 # Main page where people fill the form
@@ -47,12 +48,11 @@ def survey():
         for cat in categories:
             if data.get(cat):  # only if checkbox is checked
                 try:
-                    amount = round(float(data.get(f"{cat}_amount", 0)), 2)  # round to 2 decimals
+                    amount = round(float(data.get(f"{cat}_amount", 0)), 2)
                     expenses[cat] = amount
                 except ValueError:
-                    expenses[cat] = 0.0  # just in case user puts something wrong
+                    expenses[cat] = 0.0
 
-        # creating the user with the applied data
         user = User(
             age=int(data.get("age")),
             gender=data.get("gender"),
@@ -61,17 +61,15 @@ def survey():
         )
 
         pprint.pprint(user.to_dict())
-        collection.insert_one(user.to_dict())  # save to MongoDB
-        return redirect("/thanks")  # go to thank you page
+        collection.insert_one(user.to_dict())
+        return redirect("/thanks")
 
-    return render_template("survey.html")  # show the form
+    return render_template("survey.html")
 
-# Thank you page
 @app.route("/thanks")
 def thanks():
     return "<h1>Your data collected! Thank you for the applying!</h1>"
 
-# Rusults page (collected info, download possibilities, vizualization)
 @app.route("/results")
 def results():
     users = list(collection.find())
@@ -80,7 +78,7 @@ def results():
     csv_filename = "results.csv"
     with open(csv_filename, mode="w", newline="") as csv_file:
         fieldnames = ["age", "gender", "total_income"] + ["utilities", "entertainment", "school_fees", "shopping", "healthcare"]
-        writer = csv.DictWriter(csv_file, fieldnames=fieldnames, delimiter=';')  # use colums
+        writer = csv.DictWriter(csv_file, fieldnames=fieldnames, delimiter=';')
         writer.writeheader()
         for user in users:
             row = {
@@ -100,13 +98,13 @@ def results():
     print("\nResults table:")
     print(df)
 
-    # Vizualization for highest incomes by age (top 10, sorted by age ascending)
+    # Vizualization for highest incomes by age
     df_sorted = df.sort_values(by="total_income", ascending=False).head(10)
-    df_sorted = df_sorted.sort_values(by="age")  # sorting by age
+    df_sorted = df_sorted.sort_values(by="age")
 
     plt.figure(figsize=(10, 6))
     colors = plt.cm.viridis(np.linspace(0, 1, len(df_sorted)))
-    income_thousands = df_sorted["total_income"] / 1000  # for showing by thousands
+    income_thousands = df_sorted["total_income"] / 1000
     plt.bar(df_sorted["age"].astype(str), income_thousands, color=colors)
     plt.xlabel("Age")
     plt.ylabel("Total Income (in thousands $)")
@@ -143,13 +141,11 @@ def results():
     html += f"<img src='/static/gender_spending.png' alt='Gender Spending Chart'>"
     return html
 
-# route to download the CSV file
 @app.route("/download_csv")
 def download_csv():
     csv_path = os.path.join(os.getcwd(), "results.csv")
     return send_file(csv_path, as_attachment=True)
 
-# routes to download the vizualizations
 @app.route("/download_income_chart")
 def download_income_chart():
     chart_path = os.path.join(os.getcwd(), "static/income_by_age.png")
@@ -160,6 +156,7 @@ def download_gender_chart():
     chart_path = os.path.join(os.getcwd(), "static/gender_spending.png")
     return send_file(chart_path, as_attachment=True)
 
-# start the server
+# Start the server
 if __name__ == "__main__":
-    app.run(debug=True)  #for see errors
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
